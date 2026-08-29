@@ -401,3 +401,16 @@
     display: block;
   }
 }
+
+@utility auth-panel {
+  background-color: var(--auth-surface);
+  border-radius: 10px;
+  box-shadow: var(--auth-shadow);
+  padding: 3rem 2.5rem;
+  max-width: 28rem;
+  width: 100%;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
