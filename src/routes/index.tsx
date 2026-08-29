@@ -1,10 +1,13 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useState, type FormEvent } from "react";
-import { Facebook, Linkedin, Chrome } from "lucide-react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useEffect, useState, type FormEvent } from "react";
+import { Chrome } from "lucide-react";
+import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
+import { lovable } from "@/integrations/lovable/index";
 
 const title = "Sign in or Create Account | Zenith";
 const description =
-  "Sign in to your Zenith account or create a new one with the sliding sign in and sign up form.";
+  "Sign in to your Zenith account or create a new one with email or Google. Your session stays active across refreshes.";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -20,32 +23,105 @@ export const Route = createFileRoute("/")({
   component: AuthPage,
 });
 
-const socials = [
-  { label: "Continue with Facebook", Icon: Facebook },
-  { label: "Continue with Google", Icon: Chrome },
-  { label: "Continue with LinkedIn", Icon: Linkedin },
-];
+function AuthPage() {
+  const navigate = useNavigate();
+  const [panel, setPanel] = useState<"signin" | "signup">("signin");
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
-function SocialRow() {
-  return (
+  useEffect(() => {
+    let active = true;
+    supabase.auth.getSession().then(({ data }) => {
+      if (active && data.session) navigate({ to: "/dashboard", replace: true });
+    });
+    return () => {
+      active = false;
+    };
+  }, [navigate]);
+
+  const handleSignIn = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setBusy(true);
+    setNotice(null);
+    const { error } = await supabase.auth.signInWithPassword({
+      email: String(form.get("email")),
+      password: String(form.get("password")),
+    });
+    setBusy(false);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    navigate({ to: "/dashboard", replace: true });
+  };
+
+  const handleSignUp = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setBusy(true);
+    setNotice(null);
+    const { data, error } = await supabase.auth.signUp({
+      email: String(form.get("email")),
+      password: String(form.get("password")),
+      options: {
+        emailRedirectTo: window.location.origin,
+        data: { full_name: String(form.get("name")) },
+      },
+    });
+    setBusy(false);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    if (data.session) {
+      navigate({ to: "/dashboard", replace: true });
+      return;
+    }
+    setNotice("Check your email to confirm your account, then sign in.");
+    toast.success("Almost there — confirm your email to finish signing up.");
+  };
+
+  const handleReset = async () => {
+    const email = window.prompt("Enter the email for your account:");
+    if (!email) return;
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    toast.success("Password reset link sent — check your inbox.");
+  };
+
+  const handleGoogle = async () => {
+    setBusy(true);
+    const result = await lovable.auth.signInWithOAuth("google", {
+      redirect_uri: window.location.origin,
+    });
+    if (result.error) {
+      setBusy(false);
+      toast.error("Google sign-in failed. Please try again.");
+      return;
+    }
+    if (result.redirected) return;
+    navigate({ to: "/dashboard", replace: true });
+  };
+
+  const googleButton = (
     <div className="auth-social-row">
-      {socials.map(({ label, Icon }) => (
-        <button key={label} type="button" aria-label={label} className="auth-social">
-          <Icon size={16} aria-hidden="true" />
-        </button>
-      ))}
+      <button
+        type="button"
+        aria-label="Continue with Google"
+        className="auth-social"
+        onClick={handleGoogle}
+        disabled={busy}
+      >
+        <Chrome size={16} aria-hidden="true" />
+      </button>
     </div>
   );
-}
-
-function AuthPage() {
-  const [panel, setPanel] = useState<"signin" | "signup">("signin");
-  const [message, setMessage] = useState<string | null>(null);
-
-  const submit = (kind: string) => (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setMessage(`${kind} submitted — connect a backend to make this live.`);
-  };
 
   return (
     <main className="auth-page">
@@ -53,15 +129,22 @@ function AuthPage() {
 
       <div className="auth-card" data-panel={panel}>
         <div className="auth-form-container auth-signup">
-          <form className="auth-form" onSubmit={submit("Sign up")}>
+          <form className="auth-form" onSubmit={handleSignUp}>
             <h2 className="auth-title">Create Account</h2>
-            <SocialRow />
+            {googleButton}
             <span className="auth-hint">or use your email for registration</span>
-            <input className="auth-input" type="text" placeholder="Name" required />
-            <input className="auth-input" type="email" placeholder="Email" required />
-            <input className="auth-input" type="password" placeholder="Password" required />
-            <button className="auth-btn" type="submit">
-              Sign Up
+            <input className="auth-input" name="name" type="text" placeholder="Name" required />
+            <input className="auth-input" name="email" type="email" placeholder="Email" required />
+            <input
+              className="auth-input"
+              name="password"
+              type="password"
+              placeholder="Password"
+              minLength={6}
+              required
+            />
+            <button className="auth-btn" type="submit" disabled={busy}>
+              {busy ? "Please wait…" : "Sign Up"}
             </button>
             <p className="auth-mobile-switch">
               Already have an account?{" "}
@@ -73,17 +156,23 @@ function AuthPage() {
         </div>
 
         <div className="auth-form-container auth-signin">
-          <form className="auth-form" onSubmit={submit("Sign in")}>
+          <form className="auth-form" onSubmit={handleSignIn}>
             <h2 className="auth-title">Sign in</h2>
-            <SocialRow />
+            {googleButton}
             <span className="auth-hint">or use your account</span>
-            <input className="auth-input" type="email" placeholder="Email" required />
-            <input className="auth-input" type="password" placeholder="Password" required />
-            <a className="auth-link" href="#reset">
+            <input className="auth-input" name="email" type="email" placeholder="Email" required />
+            <input
+              className="auth-input"
+              name="password"
+              type="password"
+              placeholder="Password"
+              required
+            />
+            <button className="auth-link" type="button" onClick={handleReset}>
               Forgot your password?
-            </a>
-            <button className="auth-btn" type="submit">
-              Sign In
+            </button>
+            <button className="auth-btn" type="submit" disabled={busy}>
+              {busy ? "Please wait…" : "Sign In"}
             </button>
             <p className="auth-mobile-switch">
               New here?{" "}
@@ -126,9 +215,9 @@ function AuthPage() {
         </div>
       </div>
 
-      {message ? (
+      {notice ? (
         <p role="status" className="auth-hint">
-          {message}
+          {notice}
         </p>
       ) : null}
     </main>
