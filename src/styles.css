@@ -373,7 +373,31 @@
     animation: none;
     opacity: 1;
     z-index: 1;
+    display: none;
   }
+  .auth-card[data-panel="signin"] .auth-signin,
+  .auth-card[data-panel="signup"] .auth-signup { display: block; }
   .auth-form { padding: 2.5rem 1.5rem; }
   .auth-overlay-container { display: none; }
+}
+
+@utility auth-mobile-switch {
+  display: none;
+  font-size: 13px;
+  margin-top: 1.25rem;
+  color: var(--auth-ink);
+  & button {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    font-weight: 700;
+    color: var(--auth-brand);
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  @media (max-width: 767px) {
+    display: block;
+  }
 }
